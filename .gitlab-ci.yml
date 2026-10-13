@@ -1,10 +1,12 @@
 image: alpine:latest
 
 stages:
-  - deploy
+  - deploypages
+  - build
+  - push
 
 pages:
-  stage: deploy
+  stage: deploypages
   script:
     - mkdir public
     - cp -r assets public/
@@ -14,3 +16,33 @@ pages:
       - public
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# Build Docker Image and Save it as an Artifact
+build_docker_image:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  script:
+    - docker build -t $CUSTOM_IMAGE_NAME:latest .
+    - docker save $CUSTOM_IMAGE_NAME:latest > docker-image.tar
+  artifacts:
+    paths:
+      - docker-image.tar  # Share the saved Docker image as an artifact
+  only:
+    - main
+
+# Load Docker Image and Push it to the GitLab Container Registry
+push_docker_image:
+  stage: push
+  image: docker:latest
+  services:
+    - docker:dind
+  dependencies:
+    - build_docker_image  # Use the artifacts from the build job
+  script:
+    - docker load < docker-image.tar  # Load the Docker image from the artifact
+    - echo "$CI_PASS" | docker login -u "$CI_USER" --password-stdin 
+    - docker push $CUSTOM_IMAGE_NAME:latest
+  only:
+    - main
